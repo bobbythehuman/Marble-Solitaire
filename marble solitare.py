@@ -365,11 +365,44 @@ def play(gameTable: table):
         gameTable.makeMove(option[0], option[1], option[2])
 
 
+def deepSearch(startGame: table):
+    global gameMap
+    startGameEncoded = startGame.encodeGrid()
+
+    if startGameEncoded in gameMap:
+        return
+    gameMap.update({startGameEncoded: []})
+
+    moves = startGame.validMoves()
+    for go in moves:
+        # temporary
+        if len(gameMap) >= 5000:
+            break
+
+        gameCopy = deepcopy(startGame)
+        x, y = go[0].getPos()
+        result = gameCopy.makeMove(x, y, go[1])
+
+        if result:
+            gameCopyEncoded = gameCopy.encodeGrid()
+            if gameCopyEncoded not in gameMap[startGameEncoded]:
+                gameMap[startGameEncoded].append(gameCopyEncoded)
+
+            deepSearch(gameCopy)
+    if not moves:
+        if startGame.hasWon():
+            gameMap[startGameEncoded].append("WIN")
+        else:
+            gameMap[startGameEncoded].append("END")
+
+
 if __name__ == "__main__":
 
     gameMap = {}
 
     a = table()
+
+    deepSearch(a)
 
     # a.displayTable()
     #
@@ -388,4 +421,4 @@ if __name__ == "__main__":
     # a.displayTable()
     # a.displayMoves()
 
-    play(a)
+    # play(a)
