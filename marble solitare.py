@@ -38,8 +38,8 @@ class table:
         self.width = 7
         self.height = 7
         self.grid: list[list[cell]] = self.createTable()
-        self.applyTable("play")
-        # self.applyTable("debug")
+        # self.applyTable("play")
+        self.applyTable("debug")
         self.invertDirMap = {
             "north": "south",
             "south": "north",
@@ -337,6 +337,23 @@ class table:
         else:
             return True
 
+    def rotateGrid90(self):
+        """Rotate grid 90 degrees clockwise"""
+        # newTable = table()
+        # newTable.width = self.height
+        # newTable.height = self.width
+        # newTable.grid = []
+
+        newGrid = []
+        for x in range(self.width):
+            newRow = []
+            for y in range(self.height - 1, -1, -1):
+                oldCell = self.grid[y][x]
+                newCell = cell(self.height - 1 - y, x, oldCell.getMode())
+                newRow.append(newCell)
+            newGrid.append(newRow)
+        self.grid = newGrid
+
 
 def play(gameTable: table):
     gameTable.applyTable("play")
@@ -367,25 +384,36 @@ def play(gameTable: table):
 
 def deepSearch(startGame: table):
     global gameMap
-    startGameEncoded = startGame.encodeGrid()
+    exist = False
+    for i in range(4):
+        startGame.rotateGrid90()
+        startGameEncoded = startGame.encodeGrid()
+        if startGameEncoded in gameMap:
+            exist = True
+            return
 
-    if startGameEncoded in gameMap:
-        return
-    gameMap.update({startGameEncoded: []})
+    if not exist:
+        gameMap.update({startGameEncoded: []})
 
     moves = startGame.validMoves()
     for go in moves:
         # temporary
-        if len(gameMap) >= 5000:
-            break
+        # if len(gameMap) >= 5000:
+        #     break
 
         gameCopy = deepcopy(startGame)
         x, y = go[0].getPos()
         result = gameCopy.makeMove(x, y, go[1])
 
         if result:
-            gameCopyEncoded = gameCopy.encodeGrid()
-            if gameCopyEncoded not in gameMap[startGameEncoded]:
+            exist = False
+            for i in range(4):
+                gameCopy.rotateGrid90()
+                gameCopyEncoded = gameCopy.encodeGrid()
+                if gameCopyEncoded in gameMap[startGameEncoded]:
+                    exist = True
+                    break
+            if not exist:
                 gameMap[startGameEncoded].append(gameCopyEncoded)
 
             deepSearch(gameCopy)
@@ -403,6 +431,13 @@ if __name__ == "__main__":
     a = table()
 
     deepSearch(a)
+
+    print(len(gameMap))
+
+    # a.displayTable()
+
+    # a.rotateGrid90()
+    # print()
 
     # a.displayTable()
     #
