@@ -149,12 +149,16 @@ class table:
                 stringVar += f"\t{cellVar.getMode()}"
             print(stringVar)
 
-    def fetchCellContent(self, content=0) -> list[cell]:
+    def fetchCellContent(self, content=0, valRange=False) -> list[cell]:
         foundCells = []
         for y, row in enumerate(self.grid):
             for x, cellVar in enumerate(row):
-                if cellVar.getMode() == content:
-                    foundCells.append(cellVar)
+                if valRange:
+                    if cellVar.getMode() >= content:
+                        foundCells.append(content)
+                else:
+                    if cellVar.getMode() == content:
+                        foundCells.append(cellVar)
         return foundCells
 
     def fetchCell(self, xAxis: int, yAxis: int) -> cell:
@@ -328,14 +332,15 @@ class table:
         return newGrid
 
     def hasWon(self) -> bool:
-        occupiedCell = self.fetchCellContent(1)
+        occupiedCell = self.fetchCellContent(1, True)
         if len(occupiedCell) != 1:
             return False
         elif occupiedCell[0].getMode() != 1:
             return False
-
-        else:
+        elif len(occupiedCell) == 1 and occupiedCell[0].getMode() == 1:
             return True
+        else:
+            return False
 
 
 def play(gameTable: table):
