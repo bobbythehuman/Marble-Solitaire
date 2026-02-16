@@ -1,5 +1,7 @@
 import math
 from copy import deepcopy
+from time import time
+from typing import Union
 
 
 class cell:
@@ -149,12 +151,16 @@ class table:
                 stringVar += f"\t{cellVar.getMode()}"
             print(stringVar)
 
-    def fetchCellContent(self, content=0) -> list[cell]:
+    def fetchCellContent(self, content=0, valRange=False) -> list[cell]:
         foundCells = []
         for y, row in enumerate(self.grid):
             for x, cellVar in enumerate(row):
-                if cellVar.getMode() == content:
-                    foundCells.append(cellVar)
+                if valRange:
+                    if cellVar.getMode() >= content:
+                        foundCells.append(content)
+                else:
+                    if cellVar.getMode() == content:
+                        foundCells.append(cellVar)
         return foundCells
 
     def fetchCell(self, xAxis: int, yAxis: int) -> cell:
@@ -328,30 +334,29 @@ class table:
         return newGrid
 
     def hasWon(self) -> bool:
-        occupiedCell = self.fetchCellContent(1)
+        occupiedCell = self.fetchCellContent(1, True)
         if len(occupiedCell) != 1:
             return False
         elif occupiedCell[0].getMode() != 1:
             return False
-
-        else:
+        elif len(occupiedCell) == 1 and occupiedCell[0].getMode() == 1:
             return True
+        else:
+            return False
 
     def rotateGrid90(self):
         """Rotate grid 90 degrees clockwise"""
-        # newTable = table()
-        # newTable.width = self.height
-        # newTable.height = self.width
-        # newTable.grid = []
 
+        newGrid = list(zip(*self.grid[::-1]))
+        self.grid = newGrid
+
+    def reflectGridHorizontal(self):
+        """Reflect grid horizontally (mirror left-right)"""
         newGrid = []
-        for x in range(self.width):
-            newRow = []
-            for y in range(self.height - 1, -1, -1):
-                oldCell = self.grid[y][x]
-                newCell = cell(self.height - 1 - y, x, oldCell.getMode())
-                newRow.append(newCell)
-            newGrid.append(newRow)
+        for y in range(self.height):
+            newRow = self.grid[y]
+            flippedRow = newRow[::-1]
+            newGrid.append(flippedRow)
         self.grid = newGrid
 
 
@@ -371,7 +376,7 @@ def play(gameTable: table):
             id += 1
 
         choice = -1
-        while choice < 1:
+        while choice not in options.keys():
             choice = int(input("From the list above choose an option, top is 1: "))
 
         option = options.get(choice)
@@ -382,24 +387,23 @@ def play(gameTable: table):
         gameTable.makeMove(option[0], option[1], option[2])
 
 
-def deepSearch(startGame: table):
-    global gameMap
+def deepSearch(startGame: table, mapSize=5000, initialMap={}) -> dict:
     exist = False
     for i in range(4):
         startGame.rotateGrid90()
         startGameEncoded = startGame.encodeGrid()
-        if startGameEncoded in gameMap:
+        if startGameEncoded in initialMap:
             exist = True
-            return
+            return initialMap
 
     if not exist:
-        gameMap.update({startGameEncoded: []})
+        initialMap.update({startGameEncoded: []})
 
     moves = startGame.validMoves()
     for go in moves:
         # temporary
-        # if len(gameMap) >= 5000:
-        #     break
+        if len(initialMap) >= mapSize:
+            break
 
         gameCopy = deepcopy(startGame)
         x, y = go[0].getPos()
@@ -407,21 +411,28 @@ def deepSearch(startGame: table):
 
         if result:
             exist = False
-            for i in range(4):
-                gameCopy.rotateGrid90()
-                gameCopyEncoded = gameCopy.encodeGrid()
-                if gameCopyEncoded in gameMap[startGameEncoded]:
-                    exist = True
+            for x in range(2):
+                gameCopy.reflectGridHorizontal()
+                for i in range(4):
+                    gameCopy.rotateGrid90()
+                    gameCopyEncoded = gameCopy.encodeGrid()
+                    if gameCopyEncoded in initialMap[startGameEncoded]:
+                        exist = True
+                        break
+                if exist:
                     break
             if not exist:
-                gameMap[startGameEncoded].append(gameCopyEncoded)
+                initialMap[startGameEncoded].append(gameCopyEncoded)
 
-            deepSearch(gameCopy)
+            initialMap = deepSearch(gameCopy, mapSize, initialMap)
+            # return initialMap
     if not moves:
         if startGame.hasWon():
-            gameMap[startGameEncoded].append("WIN")
+            initialMap[startGameEncoded].append("WIN")
+            print(startGameEncoded)
         else:
-            gameMap[startGameEncoded].append("END")
+            initialMap[startGameEncoded].append("END")
+    return initialMap
 
 
 if __name__ == "__main__":
@@ -430,15 +441,16 @@ if __name__ == "__main__":
 
     a = table()
 
-    deepSearch(a)
-
-    print(len(gameMap))
+    s = time()
+    b = deepSearch(a, 50000)
+    e = time()
+    print(e - s)
+    print(len(b))
 
     # a.displayTable()
-
-    # a.rotateGrid90()
+    # a.reflectGridHorizontal()
+    # # a.rotateGrid90()
     # print()
-
     # a.displayTable()
     #
     # b = a.encodeGrid()
