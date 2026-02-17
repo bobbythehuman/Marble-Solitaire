@@ -464,9 +464,7 @@ def deepSearch(startGame: table, depth=5, initialMap=None, visited=None) -> dict
     return initialMap
 
 
-def find_paths_to_start(
-    graph: dict[str, list[str]], start: str, end: str
-) -> list[list[str]]:
+def findPaths(graph: dict[str, list[str]], start: str, end: str) -> list[list[str]]:
     """
     Finds all paths from start to end
     and walking backwards from end to start.
@@ -515,9 +513,7 @@ def play(gameTable: table):
             if choice == -1:
                 # break
                 allMoves = deepSearch(gameTable, DEPTH)
-                paths = find_paths_to_start(
-                    allMoves, start=gameTable.getConicalForm(), end="WIN"
-                )
+                paths = findPaths(allMoves, start=gameTable.getConicalForm(), end="WIN")
                 if paths:
                     print(f"Can win in {DEPTH} moves or less!")
                 else:
@@ -538,13 +534,6 @@ if __name__ == "__main__":
 
     a = table()
 
-    # a.makeMove(3, 4, "north")
-    # a.displayTable()
-    # a.makeMove(5, 4, "west")
-    # a.displayTable()
-    # a.getConicalForm()
-    # print()
-
     ### finds moves with depth and prints the paths
     s = time()
     depth = 9
@@ -553,12 +542,12 @@ if __name__ == "__main__":
     startMap = a.getConicalForm()
 
     print("Paths from start to end:")
-    paths = find_paths_to_start(b, start=startMap, end="END")
+    paths = findPaths(b, start=startMap, end="END")
     for path in paths:
         print(" -> ".join(path))
 
     print("Paths from start to Win:")
-    paths = find_paths_to_start(b, start=startMap, end="WIN")
+    paths = findPaths(b, start=startMap, end="WIN")
     for path in paths:
         print(" -> ".join(path))
 
