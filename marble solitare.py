@@ -2,6 +2,7 @@ import math
 from copy import deepcopy
 from time import time
 from typing import Union
+import numpy as np
 
 
 class cell:
@@ -40,8 +41,8 @@ class table:
         self.width = 7
         self.height = 7
         self.grid: list[list[cell]] = self.createTable()
-        # self.applyTable("play")
-        self.applyTable("debug")
+        self.applyTable("play")
+        # self.applyTable("debug")
         self.invertDirMap = {
             "north": "south",
             "south": "north",
@@ -103,13 +104,17 @@ class table:
             "Y",
             "Z",
         ]
+        self.encodeDict = {v: k for k, v in enumerate(self.encodeList)}
+        # Pre-calculate segment size to avoid recalculating
+        self.BASE = 3
+        self.segmentSize = int(math.log(len(self.encodeList)) // math.log(self.BASE))
 
     def fetchTable(self):
         return self.grid
 
     def changeCellMode(self, xAxis, yAxis, mode):
-        cell = self.grid[yAxis][xAxis]
-        cell.changeMode(mode)
+        cellVar: cell = self.grid[yAxis][xAxis]
+        cellVar.changeMode(mode)
 
     def createTable(self):
         grid = []
@@ -118,6 +123,7 @@ class table:
             for x in range(self.width):
                 row.append(cell(x, y))
             grid.append(row)
+        # grid = np.array(grid)
         return grid
 
     def applyTable(self, mode="play"):
@@ -150,14 +156,15 @@ class table:
             for cellVar in row:
                 stringVar += f"\t{cellVar.getMode()}"
             print(stringVar)
+        print("\n")
 
-    def fetchCellContent(self, content=0, valRange=False) -> list[cell]:
+    def fetchCellContent(self, content=1, valRange=False) -> list[cell]:
         foundCells = []
         for y, row in enumerate(self.grid):
             for x, cellVar in enumerate(row):
                 if valRange:
                     if cellVar.getMode() >= content:
-                        foundCells.append(content)
+                        foundCells.append(cellVar)
                 else:
                     if cellVar.getMode() == content:
                         foundCells.append(cellVar)
@@ -177,14 +184,7 @@ class table:
 
     def fetchNeighbours(self, xAxis: int, yAxis: int):
         """
-        Docstring for fetchNeighbours
-
-        :param xAxis: Description
-        :type xAxis: int
-        :param yAxis: Description
-        :type yAxis: int
-        Return
-        a dict of jumping direction containing:
+        Returns a dict of jumping direction containing:
         the start cell, the cell being jump, with the x/y being the end point
         """
         endPoint = self.fetchCell(xAxis, yAxis)
@@ -258,12 +258,20 @@ class table:
 
         return True
 
-    def encodeGrid(self):
-        BASE = 3
-        bitDepth = len(self.encodeList)  # potential bit depth
-        segmentSize = int(
-            math.log(bitDepth) // math.log(BASE)
-        )  # highest available segment size, if bitdepth is 50, it can support 4 segment size cause 3**4 == 81
+    def hasWon(self) -> bool:
+        occupiedCell = self.fetchCellContent(1, True)
+        if len(occupiedCell) != 1:
+            return False
+        elif occupiedCell[0].getMode() != 1:
+            return False
+        elif len(occupiedCell) == 1 and occupiedCell[0].getMode() == 1:
+            return True
+        else:
+            return False
+
+    def encodeGrid(self) -> str:
+        BASE = self.BASE
+        segmentSize = self.segmentSize
         flattenGrid = [x for xs in self.grid for x in xs]
         totalSegments = math.ceil(len(flattenGrid) / segmentSize)
 
@@ -287,19 +295,49 @@ class table:
                 factor = BASE**segmentIndex
                 encodedNum += (factor * mappedMode) - factor
 
-            # print(encodedNum)
+            encodedSegment = self.encodeList[encodedNum]
+            encodedValue.append(encodedSegment)
+        return "".join(encodedValue)
+
+    def _encodeGridStatic(self, grid: list[list[cell]]) -> str:
+        """Encodes a given grid without modifying self"""
+        BASE = self.BASE
+        segmentSize = self.segmentSize
+        flattenGrid = [x for xs in grid for x in xs]
+        totalSegments = math.ceil(len(flattenGrid) / segmentSize)
+
+        modeMap = {-1: 1, 0: 2, 1: 3}
+        encodedValue = [
+            str(self.width),
+            "-",
+            str(self.height),
+            "-",
+            str(segmentSize),
+            "-",
+        ]
+        for segmentNum in range(totalSegments):
+            low = segmentSize * segmentNum
+            high = (segmentSize * segmentNum) + segmentSize
+            segment = flattenGrid[low:high]
+
+            encodedNum = 0
+            for segmentIndex, x in enumerate(segment):
+                mappedMode = modeMap.get(x.getMode(), 3)
+                factor = BASE**segmentIndex
+                encodedNum += (factor * mappedMode) - factor
+
             encodedSegment = self.encodeList[encodedNum]
             encodedValue.append(encodedSegment)
         return "".join(encodedValue)
 
     def decodeGrid(self, encodedGrid, segmentSize):
-        BASE = 3
+        BASE = self.BASE
         fullGrid = []
         modeMap = {1: -1, 2: 0, 3: 1}
 
         for code in encodedGrid:
             segment = []
-            reverseMap = self.encodeList.index(code)
+            reverseMap = self.encodeDict.get(code, 0)  # O(1) lookup instead of O(n)
             remainder = reverseMap
             for i in range(segmentSize - 1, -1, -1):
                 factor = BASE**i
@@ -331,37 +369,128 @@ class table:
             newGrid.append(newRow)
 
         self.grid = newGrid
-        return newGrid
-
-    def hasWon(self) -> bool:
-        occupiedCell = self.fetchCellContent(1, True)
-        if len(occupiedCell) != 1:
-            return False
-        elif occupiedCell[0].getMode() != 1:
-            return False
-        elif len(occupiedCell) == 1 and occupiedCell[0].getMode() == 1:
-            return True
-        else:
-            return False
+        # return newGrid
 
     def rotateGrid90(self):
         """Rotate grid 90 degrees clockwise"""
-
         newGrid = list(zip(*self.grid[::-1]))
+        # newGrid = np.rot90(self.grid)
         self.grid = newGrid
 
-    def reflectGridHorizontal(self):
-        """Reflect grid horizontally (mirror left-right)"""
-        newGrid = []
-        for y in range(self.height):
-            newRow = self.grid[y]
-            flippedRow = newRow[::-1]
-            newGrid.append(flippedRow)
+    def _rotateGrid90Static(self, grid: list[list[cell]]) -> list[list[cell]]:
+        """
+        Rotate grid 90 degrees clockwise
+        returns a new grid without modifying self.grid
+        """
+        return [list(row) for row in zip(*grid[::-1])]
+
+    def reflectGrid(self, mode=0):
+        """
+        Reflect grid
+        mode = 0, flips along horizontal, top to bottom
+        mode = 1, flips along vertical, left to right
+        """
+        newGrid = [row[::-1] for row in self.grid]
+        # newGrid = np.flip(self.grid, mode)
+        # for y in range(self.height):
+        #     newRow = self.grid[y]
+        #     flippedRow = newRow[::-1]
+        #     newGrid.append(flippedRow)
         self.grid = newGrid
+
+    def _reflectGridStatic(self, grid) -> list[list[cell]]:
+        """
+        Reflect grid vertically
+        returns a new grid without modifying self.grid
+        """
+        return [row[::-1] for row in grid]
+
+    def getConicalForm(self):
+        """
+        Get canonical form by checking all 8 symmetries without modifying self.grid
+        """
+        forms = set()
+        grid = self.grid
+
+        for _ in range(2):
+            for _ in range(4):
+                grid = self._rotateGrid90Static(grid)
+                forms.add(self._encodeGridStatic(grid))
+            grid = self._reflectGridStatic(grid)
+
+        return min(forms)
+
+
+def deepSearch(startGame: table, depth=5, initialMap=None, visited=None) -> dict:
+    if initialMap is None:
+        initialMap = {"END": set(), "WIN": set()}
+    if visited is None:
+        visited = set()
+
+    startGameMinEncoded = startGame.getConicalForm()
+
+    # Skip if already visited to prevent cycles and redundant exploration
+    if startGameMinEncoded in visited:
+        return initialMap
+    visited.add(startGameMinEncoded)
+
+    moves = startGame.validMoves()
+
+    for go in moves:
+        gameCopy = deepcopy(startGame)
+        x, y = go[0].getPos()
+        result = gameCopy.makeMove(x, y, go[1])
+
+        if result:
+            gameCopyMinEncoded = gameCopy.getConicalForm()
+            if gameCopyMinEncoded not in initialMap:
+                # initialMap[startGameMinEncoded].append(gameCopyMinEncoded)
+                initialMap[gameCopyMinEncoded] = set([startGameMinEncoded])
+            else:
+                initialMap[gameCopyMinEncoded].add(startGameMinEncoded)
+
+            # if len(initialMap) < mapSize:
+            if depth > 0:
+                initialMap = deepSearch(gameCopy, depth - 1, initialMap, visited)
+
+    if not moves:
+        if startGame.hasWon():
+            # initialMap[startGameMinEncoded].append("WIN")
+            initialMap["WIN"].add(startGameMinEncoded)
+            print(startGameMinEncoded)
+        else:
+            # initialMap[startGameMinEncoded].append("END")
+            initialMap["END"].add(startGameMinEncoded)
+    return initialMap
+
+
+def find_paths_to_start(
+    graph: dict[str, list[str]], start: str, end: str
+) -> list[list[str]]:
+    """
+    Finds all paths from start to end
+    and walking backwards from end to start.
+    Returns each path in start -> end order.
+    """
+    all_paths = []
+
+    def backtrack(current: str, path: list[str]):
+        if current == start:
+            all_paths.append(list(reversed(path)))
+            return
+        for parent in graph.get(current, []):
+            if parent not in path:  # avoid cycles
+                path.append(parent)
+                backtrack(parent, path)
+                path.pop()
+
+    backtrack(end, [end])
+    return all_paths
 
 
 def play(gameTable: table):
     gameTable.applyTable("play")
+    DEPTH = 5
     while True:
         gameTable.displayTable()
         gameTable.displayMoves()
@@ -377,7 +506,25 @@ def play(gameTable: table):
 
         choice = -1
         while choice not in options.keys():
-            choice = int(input("From the list above choose an option, top is 1: "))
+            choice = int(
+                input(
+                    f"From the list above choose an option, top is 1 or -1 to check if you can win within {DEPTH} moves: "
+                )
+            )
+
+            if choice == -1:
+                # break
+                allMoves = deepSearch(gameTable, DEPTH)
+                paths = find_paths_to_start(
+                    allMoves, start=gameTable.getConicalForm(), end="WIN"
+                )
+                if paths:
+                    print(f"Can win in {DEPTH} moves or less!")
+                else:
+                    print(f"Cannot win in {DEPTH} moves or less.")
+                for path in paths:
+                    print("Paths from start to Win:")
+                    print(" -> ".join(path))
 
         option = options.get(choice)
         if not option:
@@ -387,85 +534,36 @@ def play(gameTable: table):
         gameTable.makeMove(option[0], option[1], option[2])
 
 
-def deepSearch(startGame: table, mapSize=5000, initialMap={}) -> dict:
-    exist = False
-    for i in range(4):
-        startGame.rotateGrid90()
-        startGameEncoded = startGame.encodeGrid()
-        if startGameEncoded in initialMap:
-            exist = True
-            return initialMap
-
-    if not exist:
-        initialMap.update({startGameEncoded: []})
-
-    moves = startGame.validMoves()
-    for go in moves:
-        # temporary
-        if len(initialMap) >= mapSize:
-            break
-
-        gameCopy = deepcopy(startGame)
-        x, y = go[0].getPos()
-        result = gameCopy.makeMove(x, y, go[1])
-
-        if result:
-            exist = False
-            for x in range(2):
-                gameCopy.reflectGridHorizontal()
-                for i in range(4):
-                    gameCopy.rotateGrid90()
-                    gameCopyEncoded = gameCopy.encodeGrid()
-                    if gameCopyEncoded in initialMap[startGameEncoded]:
-                        exist = True
-                        break
-                if exist:
-                    break
-            if not exist:
-                initialMap[startGameEncoded].append(gameCopyEncoded)
-
-            initialMap = deepSearch(gameCopy, mapSize, initialMap)
-            # return initialMap
-    if not moves:
-        if startGame.hasWon():
-            initialMap[startGameEncoded].append("WIN")
-            print(startGameEncoded)
-        else:
-            initialMap[startGameEncoded].append("END")
-    return initialMap
-
-
 if __name__ == "__main__":
-
-    gameMap = {}
 
     a = table()
 
+    # a.makeMove(3, 4, "north")
+    # a.displayTable()
+    # a.makeMove(5, 4, "west")
+    # a.displayTable()
+    # a.getConicalForm()
+    # print()
+
+    ### finds moves with depth and prints the paths
     s = time()
-    b = deepSearch(a, 50000)
+    depth = 9
+    b = deepSearch(a, depth)
+
+    startMap = a.getConicalForm()
+
+    print("Paths from start to end:")
+    paths = find_paths_to_start(b, start=startMap, end="END")
+    for path in paths:
+        print(" -> ".join(path))
+
+    print("Paths from start to Win:")
+    paths = find_paths_to_start(b, start=startMap, end="WIN")
+    for path in paths:
+        print(" -> ".join(path))
+
     e = time()
     print(e - s)
     print(len(b))
-
-    # a.displayTable()
-    # a.reflectGridHorizontal()
-    # # a.rotateGrid90()
-    # print()
-    # a.displayTable()
-    #
-    # b = a.encodeGrid()
-    # print(b)
-    # a.decodeAndApply(b)
-    #
-    # a.displayTable()
-
-    # a.displayTable()
-    # a.displayMoves()
-
-    # result = a.makeMove(3, 5, "north")
-    # print(result)
-
-    # a.displayTable()
-    # a.displayMoves()
 
     # play(a)
