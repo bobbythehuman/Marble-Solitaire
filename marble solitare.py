@@ -3,6 +3,8 @@ from copy import deepcopy
 from time import time
 from typing import Union
 import numpy as np
+from collections import defaultdict
+import random
 
 
 class cell:
@@ -103,6 +105,35 @@ class table:
             "X",
             "Y",
             "Z",
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "!",
+            "£",
+            "$",
+            "%",
+            "^",
+            "&",
+            "*",
+            "(",
+            ")",
+            "=",
+            "+",
+            "[",
+            "]",
+            "{",
+            "}",
+            ";",
+            ":",
+            "@",
+            "#",
         ]
         self.encodeDict = {v: k for k, v in enumerate(self.encodeList)}
         # Pre-calculate segment size to avoid recalculating
@@ -421,47 +452,87 @@ class table:
         return min(forms)
 
 
+def openJson(fileName: str) -> dict:
+    import json
+
+    try:
+        with open(fileName, "r") as file:
+            data = json.load(file)
+    except FileNotFoundError:
+        data = {}
+    except Exception as e:
+        print(f"Error loading JSON: {e}")
+        data = {}
+    return data
+
+
+def saveJson(fileName: str, data: dict) -> None:
+    import json
+
+    try:
+        with open(fileName, "w") as file:
+            json.dump(data, file, indent=2)
+    except Exception as e:
+        print(f"Error saving JSON: {e}")
+
+
 def deepSearch(startGame: table, depth=5, initialMap=None, visited=None) -> dict:
+    # returns a dict of {endState: [list of startStates that can reach this endState in one move]}
+
     if initialMap is None:
-        initialMap = {"END": set(), "WIN": set()}
+        initialMap = {}
     if visited is None:
         visited = set()
 
-    startGameMinEncoded = startGame.getConicalForm()
+    startStateEncoded = startGame.getConicalForm()
+
+    if startStateEncoded in initialMap:
+        nextStates = initialMap.get(startStateEncoded)
+        if nextStates:
+            return initialMap
 
     # Skip if already visited to prevent cycles and redundant exploration
-    if startGameMinEncoded in visited:
+    if startStateEncoded in visited:
         return initialMap
-    visited.add(startGameMinEncoded)
+
+    visited.add(startStateEncoded)
 
     moves = startGame.validMoves()
 
+    initialMap.update({startStateEncoded: []})
+
     for go in moves:
-        gameCopy = deepcopy(startGame)
+        endState = deepcopy(startGame)
         x, y = go[0].getPos()
-        result = gameCopy.makeMove(x, y, go[1])
+        result = endState.makeMove(x, y, go[1])
 
         if result:
-            gameCopyMinEncoded = gameCopy.getConicalForm()
-            if gameCopyMinEncoded not in initialMap:
-                # initialMap[startGameMinEncoded].append(gameCopyMinEncoded)
-                initialMap[gameCopyMinEncoded] = set([startGameMinEncoded])
-            else:
-                initialMap[gameCopyMinEncoded].add(startGameMinEncoded)
+            endStateEncoded = endState.getConicalForm()
 
-            # if len(initialMap) < mapSize:
+            if endStateEncoded not in initialMap[startStateEncoded]:
+                initialMap[startStateEncoded].append(endStateEncoded)
+
             if depth > 0:
-                initialMap = deepSearch(gameCopy, depth - 1, initialMap, visited)
+                initialMap = deepSearch(endState, depth - 1, initialMap, visited)
 
     if not moves:
         if startGame.hasWon():
-            # initialMap[startGameMinEncoded].append("WIN")
-            initialMap["WIN"].add(startGameMinEncoded)
-            print(startGameMinEncoded)
+            # if startStateEncoded not in initialMap["WIN"]:
+            initialMap[startStateEncoded].append("WIN")
+            print(startStateEncoded)
         else:
-            # initialMap[startGameMinEncoded].append("END")
-            initialMap["END"].add(startGameMinEncoded)
+            # if startStateEncoded not in initialMap["END"]:
+            initialMap[startStateEncoded].append("END")
     return initialMap
+
+
+def build_reverse_map(graph: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Flips all edges in the graph so we can traverse backwards."""
+    reverse = defaultdict(list)
+    for parent, children in graph.items():
+        for child in children:
+            reverse[child].append(parent)
+    return reverse
 
 
 def findPaths(graph: dict[str, list[str]], start: str, end: str) -> list[list[str]]:
@@ -470,13 +541,14 @@ def findPaths(graph: dict[str, list[str]], start: str, end: str) -> list[list[st
     and walking backwards from end to start.
     Returns each path in start -> end order.
     """
+    reverseGraph = build_reverse_map(graph)
     all_paths = []
 
     def backtrack(current: str, path: list[str]):
         if current == start:
             all_paths.append(list(reversed(path)))
             return
-        for parent in graph.get(current, []):
+        for parent in reverseGraph.get(current, []):
             if parent not in path:  # avoid cycles
                 path.append(parent)
                 backtrack(parent, path)
@@ -484,6 +556,73 @@ def findPaths(graph: dict[str, list[str]], start: str, end: str) -> list[list[st
 
     backtrack(end, [end])
     return all_paths
+
+
+def find_unlinked_states(search_results: dict[str, list[str]]) -> list[str]:
+    """Return state strings that are not linked to anything."""
+
+    unlinked: list[str] = []
+    # visited = set()
+
+    for parent, endStates in search_results.items():
+        # if parent in visited:
+        #     continue
+
+        if not endStates:
+            unlinked.append(parent)
+            # visited.add(parent)
+            continue
+
+        if "WIN" in endStates or "END" in endStates:
+            # visited.add(parent)
+            continue
+
+        for state in endStates:
+            # visited.add(state)
+            if state not in search_results:
+                unlinked.append(state)
+
+    return unlinked
+
+
+def startSeach(gameTable: table, depth=5):
+    fileName = f"S{gameTable.segmentSize}_results.json"
+    gameMap = openJson(fileName)
+
+    startMap = gameTable.getConicalForm()
+
+    if startMap in gameMap:
+        unlinkedMaps = find_unlinked_states(gameMap)
+        newStartMap = random.choice(unlinkedMaps) if unlinkedMaps else startMap
+        gameTable.decodeAndApply(newStartMap)
+        # startMap = gameTable.getConicalForm()
+        print(f"Starting from an unlinked state: {newStartMap}")
+
+    startSearchTime = time()
+    results = deepSearch(gameTable, depth, initialMap=gameMap)
+    endSearchTime = time()
+    print(f"Search took {endSearchTime - startSearchTime} seconds\n")
+
+    gameMap.update(results)
+    saveJson(fileName, gameMap)
+
+    paths = findPaths(results, start=startMap, end="END")
+    if len(paths) <= 10:
+        print("Paths from start to end:")
+        for path in paths:
+            print(" -> ".join(path))
+    else:
+        print(f"{len(paths)} paths found from start to end, not printing all.\n")
+
+    paths = findPaths(results, start=startMap, end="WIN")
+    if len(paths) <= 10:
+        print("Paths from start to Win:")
+        for path in paths:
+            print(" -> ".join(path))
+    else:
+        print(f"{len(paths)} paths found from start to Win, not printing all.")
+
+    print(f"\nTotal unique starting states found: {len(results)}")
 
 
 def play(gameTable: table):
@@ -530,29 +669,21 @@ def play(gameTable: table):
         gameTable.makeMove(option[0], option[1], option[2])
 
 
+def testPath(path: list[str]):
+    gameTable = table()
+    for state in path:
+        gameTable.decodeAndApply(state)
+        gameTable.displayTable()
+
+
 if __name__ == "__main__":
 
-    a = table()
+    blankTable = table()
 
-    ### finds moves with depth and prints the paths
-    s = time()
-    depth = 9
-    b = deepSearch(a, depth)
+    depth = 4
+    startSeach(blankTable, depth)
 
-    startMap = a.getConicalForm()
-
-    print("Paths from start to end:")
-    paths = findPaths(b, start=startMap, end="END")
-    for path in paths:
-        print(" -> ".join(path))
-
-    print("Paths from start to Win:")
-    paths = findPaths(b, start=startMap, end="WIN")
-    for path in paths:
-        print(" -> ".join(path))
-
-    e = time()
-    print(e - s)
-    print(len(b))
+    # a = []
+    # testPath(a)
 
     # play(a)
