@@ -14,15 +14,19 @@ class cell:
         self.mode = mode
 
     def getMode(self) -> int:
+        """Returns the mode of the cell, -1 for invalid space, 0 for empty space, 1 for occupied space"""
         return self.mode
 
     def getPos(self) -> tuple[int, int]:
+        """Returns the x and y position of the cell as a tuple"""
         return (self.x, self.y)
 
     def changeMode(self, newMode: int) -> None:
+        """Mode is -1 for invalid space, 0 for empty space, 1 for occupied space"""
         self.mode = newMode
 
     def validCell(self) -> bool:
+        """A valid cell is one that is on the board and not an invalid space"""
         if self.mode < 0:
             return False
         x, y = self.getPos()
@@ -42,6 +46,7 @@ class table:
         # left to right for each row
         self.width = 7
         self.height = 7
+        self.emptyCells = []
         self.grid: list[list[cell]] = self.createTable()
         self.applyTable("play")
         # self.applyTable("debug")
@@ -144,8 +149,23 @@ class table:
         return self.grid
 
     def changeCellMode(self, xAxis, yAxis, mode):
+        """Changes the mode of the cell at the given coordinates"""
         cellVar: cell = self.grid[yAxis][xAxis]
         cellVar.changeMode(mode)
+        if mode == 0:
+            self.emptyCells.append(cellVar)
+        elif mode == 1:
+            if cellVar in self.emptyCells:
+                self.emptyCells.remove(cellVar)
+
+    def changeCellModeByCell(self, cellVar: cell, mode):
+        """Changes the mode of the given cell"""
+        cellVar.changeMode(mode)
+        if mode == 0:
+            self.emptyCells.append(cellVar)
+        elif mode == 1:
+            if cellVar in self.emptyCells:
+                self.emptyCells.remove(cellVar)
 
     def createTable(self):
         grid = []
@@ -158,14 +178,15 @@ class table:
         return grid
 
     def applyTable(self, mode="play"):
+        self.emptyCells = []
         if mode == "play":
             for y, row in enumerate(self.grid):
                 for x, cellVar in enumerate(row):
                     if y in [0, 1, 5, 6]:
                         if x in [2, 3, 4]:
-                            cellVar.changeMode(1)
+                            self.changeCellModeByCell(cellVar, 1)
                     elif y in [2, 3, 4]:
-                        cellVar.changeMode(1)
+                        self.changeCellModeByCell(cellVar, 1)
             self.changeCellMode(3, 3, 0)
 
         elif mode == "debug":
@@ -174,10 +195,10 @@ class table:
                 for x, cellVar in enumerate(row):
                     if y in [0, 1, 5, 6]:
                         if x in [2, 3, 4]:
-                            cellVar.changeMode(increment)
+                            self.changeCellModeByCell(cellVar, increment)
                             increment += 1
                     elif y in [2, 3, 4]:
-                        cellVar.changeMode(increment)
+                        self.changeCellModeByCell(cellVar, increment)
                         increment += 1
             self.changeCellMode(3, 3, 0)
 
@@ -191,6 +212,8 @@ class table:
 
     def fetchCellContent(self, content=1, valRange=False) -> list[cell]:
         foundCells = []
+        if self.emptyCells and content == 0 and not valRange:
+            return self.emptyCells
         for y, row in enumerate(self.grid):
             for x, cellVar in enumerate(row):
                 if valRange:
@@ -202,6 +225,7 @@ class table:
         return foundCells
 
     def fetchCell(self, xAxis: int, yAxis: int) -> cell:
+        """Returns the cell at the given coordinates, or a default invalid cell if out of bounds"""
         if yAxis < 0:
             return cell(-1, -1, -1)
         if yAxis >= len(self.grid):
@@ -218,7 +242,7 @@ class table:
         Returns a dict of jumping direction containing:
         the start cell, the cell being jump, with the x/y being the end point
         """
-        endPoint = self.fetchCell(xAxis, yAxis)
+        # endPoint = self.fetchCell(xAxis, yAxis)
         northJump = self.fetchCell(xAxis, yAxis - 1)
         northStart = self.fetchCell(xAxis, yAxis - 2)
 
@@ -254,7 +278,6 @@ class table:
                 startPoint = directionNeighbour[0]
                 if beingJumped.getMode() >= 1 and startPoint.getMode() >= 1:
                     moves.append((startPoint, direction))
-
         return moves
 
     def displayMoves(self):
@@ -266,6 +289,7 @@ class table:
             dir = i[1]
             print(f"{id}:\tX: {x+1}\t Y: {y+1}\t Dir: {dir}\t Mode: {mode}")
             id += 1
+        return moves
 
     def makeMove(self, x: int, y: int, directon: str):
         newDir = self.invertDirMap[directon]
@@ -283,9 +307,9 @@ class table:
         if not endPoint.validCell():
             return False
 
-        startPoint.changeMode(0)
-        beingJumped.changeMode(0)
-        endPoint.changeMode(1)
+        self.changeCellModeByCell(startPoint, 0)
+        self.changeCellModeByCell(beingJumped, 0)
+        self.changeCellModeByCell(endPoint, 1)
 
         return True
 
@@ -477,7 +501,12 @@ def saveJson(fileName: str, data: dict) -> None:
 
 
 def deepSearch(startGame: table, depth=5, initialMap=None, visited=None) -> dict:
-    # returns a dict of {endState: [list of startStates that can reach this endState in one move]}
+    """
+    Performs a depth-first search of the game state space starting from startGame, exploring all valid moves up to a specified depth.
+    It builds a mapping of game states to their reachable next states, while avoiding cycles by tracking visited states.
+    The function returns a dictionary where each key is a game state and its value is a list of states that can be reached from it in one move,
+    along with special markers for winning or losing end states.
+    """
 
     if initialMap is None:
         initialMap = {}
@@ -496,9 +525,7 @@ def deepSearch(startGame: table, depth=5, initialMap=None, visited=None) -> dict
         return initialMap
 
     visited.add(startStateEncoded)
-
     moves = startGame.validMoves()
-
     initialMap.update({startStateEncoded: []})
 
     for go in moves:
@@ -513,17 +540,39 @@ def deepSearch(startGame: table, depth=5, initialMap=None, visited=None) -> dict
                 initialMap[startStateEncoded].append(endStateEncoded)
 
             if depth > 0:
+                # print(depth)
                 initialMap = deepSearch(endState, depth - 1, initialMap, visited)
 
     if not moves:
         if startGame.hasWon():
-            # if startStateEncoded not in initialMap["WIN"]:
             initialMap[startStateEncoded].append("WIN")
             print(startStateEncoded)
         else:
-            # if startStateEncoded not in initialMap["END"]:
             initialMap[startStateEncoded].append("END")
+            # print("end")
     return initialMap
+
+
+def initializeSearch(gameMap, repeats, depth=5):
+    """Initializes the search by starting from random states in the game map, including unlinked states, to discover more of the state space and potentially find new paths to win or end states."""
+    for _ in range(repeats):
+        blankTable = table()
+        startMap = blankTable.getConicalForm()
+        if startMap in gameMap:
+            unlinkedMaps = find_unlinked_states(gameMap)
+            newStartMap = random.choice(unlinkedMaps) if unlinkedMaps else startMap
+            blankTable.decodeAndApply(newStartMap)
+        #     print(f"Starting from an unlinked state: {newStartMap}")
+        # else:
+        #     print(f"Starting from state: {startMap}")
+
+        s1Time = time()
+        results = deepSearch(blankTable, depth, initialMap=gameMap)
+        e1Time = time()
+        # print(f"Search took {e1Time - s1Time} seconds")
+        gameMap.update(results)
+
+    return gameMap
 
 
 def build_reverse_map(graph: dict[str, list[str]]) -> dict[str, list[str]]:
@@ -548,7 +597,8 @@ def findPaths(graph: dict[str, list[str]], start: str, end: str) -> list[list[st
         if current == start:
             all_paths.append(list(reversed(path)))
             return
-        for parent in reverseGraph.get(current, []):
+        allParents = reverseGraph.get(current, [])
+        for parent in allParents:
             if parent not in path:  # avoid cycles
                 path.append(parent)
                 backtrack(parent, path)
@@ -585,44 +635,72 @@ def find_unlinked_states(search_results: dict[str, list[str]]) -> list[str]:
     return unlinked
 
 
-def startSeach(gameTable: table, depth=5):
+def displayPaths(paths: list[list[str]], pathType: str):
+    if len(paths) <= 10:
+        if paths:
+            print(f"Paths from start to {pathType}:")
+            for path in paths:
+                print(" -> ".join(path))
+        else:
+            print(f"No paths found from start to {pathType}.\n")
+    else:
+        print(f"{len(paths)} paths found from start to {pathType}, not printing all.\n")
+
+
+def startSearch(gameTable: table):
+    """Play ground function for testing and other stuff"""
+    # setup
     fileName = f"S{gameTable.segmentSize}_results.json"
     gameMap = openJson(fileName)
-
     startMap = gameTable.getConicalForm()
+    print(f"Starting search\n")
 
-    if startMap in gameMap:
-        unlinkedMaps = find_unlinked_states(gameMap)
-        newStartMap = random.choice(unlinkedMaps) if unlinkedMaps else startMap
-        gameTable.decodeAndApply(newStartMap)
-        # startMap = gameTable.getConicalForm()
-        print(f"Starting from an unlinked state: {newStartMap}")
+    #
 
-    startSearchTime = time()
-    results = deepSearch(gameTable, depth, initialMap=gameMap)
-    endSearchTime = time()
-    print(f"Search took {endSearchTime - startSearchTime} seconds\n")
+    # search from a specified starting state, then searches until depth is reached.
+    # s1Time = time()
+    # results = deepSearch(gameTable, depth, initialMap=gameMap)
+    # e1Time = time()
+    # print(f"Search took {e1Time - s1Time} seconds\n")
 
+    # explore the game space
+
+    # Explore the state space by starting from random states in the game map, including unlinked states, to discover more of the state space and potentially find new paths to win or end states.
+    s1Time = time()
+    repeats = 50
+    depth = 8
+    results = initializeSearch(gameMap, repeats, depth=depth)
+    e1Time = time()
+    print(f"Initialization and search took {e1Time - s1Time} seconds\n")
+
+    # save results to file
+
+    s2Time = time()
     gameMap.update(results)
     saveJson(fileName, gameMap)
+    e2Time = time()
+    print(f"Saving took {e2Time - s2Time} seconds\n")
 
-    paths = findPaths(results, start=startMap, end="END")
-    if len(paths) <= 10:
-        print("Paths from start to end:")
-        for path in paths:
-            print(" -> ".join(path))
-    else:
-        print(f"{len(paths)} paths found from start to end, not printing all.\n")
+    # searches for paths to end states
 
+    s3Time = time()
+    # paths = findPaths(results, start=startMap, end="END")
+    paths = []
+    e3Time = time()
+    print(f"Finding 'end' paths took {e3Time - s3Time} seconds")
+    displayPaths(paths, "end")
+
+    # searches for winnable paths
+
+    s4Time = time()
     paths = findPaths(results, start=startMap, end="WIN")
-    if len(paths) <= 10:
-        print("Paths from start to Win:")
-        for path in paths:
-            print(" -> ".join(path))
-    else:
-        print(f"{len(paths)} paths found from start to Win, not printing all.")
+    e4Time = time()
+    print(f"Finding 'win' paths took {e4Time - s4Time} seconds")
+    displayPaths(paths, "win")
 
-    print(f"\nTotal unique starting states found: {len(results)}")
+    # display some stats about the search results
+
+    print(f"Total unique starting states found: {len(results)}")
 
 
 def play(gameTable: table):
@@ -630,8 +708,8 @@ def play(gameTable: table):
     DEPTH = 5
     while True:
         gameTable.displayTable()
-        gameTable.displayMoves()
-        moves = gameTable.validMoves()
+        moves = gameTable.displayMoves()
+        # moves = gameTable.validMoves()
 
         options = {}
         id = 1
@@ -680,10 +758,9 @@ if __name__ == "__main__":
 
     blankTable = table()
 
-    depth = 4
-    startSeach(blankTable, depth)
+    startSearch(blankTable)
 
     # a = []
     # testPath(a)
 
-    # play(a)
+    # play(blankTable)
